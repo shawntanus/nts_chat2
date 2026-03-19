@@ -5,6 +5,7 @@ from functools import lru_cache
 from typing import Any
 
 import atws
+from atws.query import get_queries_for_entities_by_id
 
 from app.config import AutotaskConfig
 
@@ -78,6 +79,18 @@ def reverse_picklist(at, entity_type: str, field_name: str, value: Any) -> Any:
         return value
 
 
+def reverse_picklist_values(at, entity_type: str, field_name: str, values: list[Any]) -> dict[Any, Any]:
+    seen: set[str] = set()
+    resolved: dict[Any, Any] = {}
+    for value in values:
+        marker = repr(value)
+        if marker in seen:
+            continue
+        seen.add(marker)
+        resolved[value] = reverse_picklist(at, entity_type, field_name, value)
+    return resolved
+
+
 def safe_name(value: Any, fallback: str = "Unknown") -> str:
     if value in (None, ""):
         return fallback
@@ -109,63 +122,118 @@ def _full_name(first: Any, last: Any, fallback: str) -> str:
     return " ".join(parts) if parts else fallback
 
 
+def _unique_int_ids(values: list[Any]) -> list[int]:
+    seen: set[int] = set()
+    result: list[int] = []
+    for value in values:
+        coerced = _coerce_int_id(value)
+        if coerced is None or coerced in seen:
+            continue
+        seen.add(coerced)
+        result.append(coerced)
+    return result
+
+
+def fetch_many_by_ids(at, entity_type: str, entity_ids: list[Any]) -> list[Any]:
+    ids = _unique_int_ids(entity_ids)
+    if not ids:
+        return []
+
+    entities: list[Any] = []
+    for query in get_queries_for_entities_by_id(entity_type, ids):
+        try:
+            entities.extend(at.query(query).fetch_all())
+        except Exception:
+            continue
+    return entities
+
+
+def _build_id_to_label_map(
+    at,
+    entity_candidates: list[tuple[str, tuple[str, ...]]],
+    values: list[Any],
+    cache: dict[int, str],
+) -> dict[int, Any]:
+    ids = _unique_int_ids(values)
+    unresolved = [entity_id for entity_id in ids if entity_id not in cache]
+    if not unresolved:
+        return {entity_id: cache.get(entity_id, entity_id) for entity_id in ids}
+
+    for entity_type, field_names in entity_candidates:
+        still_unresolved = [entity_id for entity_id in unresolved if entity_id not in cache]
+        if not still_unresolved:
+            break
+        for entity in fetch_many_by_ids(at, entity_type, still_unresolved):
+            entity_id = _coerce_int_id(attr(entity, "id"))
+            if entity_id is None:
+                continue
+            for field_name in field_names:
+                resolved = attr(entity, field_name)
+                if resolved not in (None, ""):
+                    cache[entity_id] = safe_name(resolved, entity_id)
+                    break
+
+    return {entity_id: cache.get(entity_id, entity_id) for entity_id in ids}
+
+
+def _build_people_label_map(
+    at,
+    entity_type: str,
+    values: list[Any],
+    cache: dict[int, str],
+    fallback_field: str,
+) -> dict[int, Any]:
+    ids = _unique_int_ids(values)
+    unresolved = [entity_id for entity_id in ids if entity_id not in cache]
+    if unresolved:
+        for entity in fetch_many_by_ids(at, entity_type, unresolved):
+            entity_id = _coerce_int_id(attr(entity, "id"))
+            if entity_id is None:
+                continue
+            cache[entity_id] = _full_name(
+                attr(entity, "FirstName"),
+                attr(entity, "LastName"),
+                safe_name(attr(entity, fallback_field, entity_id)),
+            )
+    return {entity_id: cache.get(entity_id, entity_id) for entity_id in ids}
+
+
 def resolve_resource_name(at, value: Any) -> Any:
     resource_id = _coerce_int_id(value)
     if resource_id is None:
         return value
-    if resource_id in _RESOURCE_CACHE:
-        return _RESOURCE_CACHE[resource_id]
-    try:
-        entity = fetch_one_by_id(at, "Resource", resource_id)
-        if entity:
-            label = _full_name(
-                attr(entity, "FirstName"),
-                attr(entity, "LastName"),
-                safe_name(attr(entity, "UserName", resource_id)),
-            )
-            _RESOURCE_CACHE[resource_id] = label
-            return label
-    except Exception:
-        pass
-    return value
+    return resolve_resource_names(at, [resource_id]).get(resource_id, value)
 
 
 def resolve_company_name(at, value: Any) -> Any:
     company_id = _coerce_int_id(value)
     if company_id is None:
         return value
-    if company_id in _COMPANY_CACHE:
-        return _COMPANY_CACHE[company_id]
-    try:
-        entity = fetch_one_by_id(at, "Company", company_id)
-        if entity:
-            label = safe_name(attr(entity, "CompanyName", company_id))
-            _COMPANY_CACHE[company_id] = label
-            return label
-    except Exception:
-        pass
-    return value
+    return resolve_company_names(at, [company_id]).get(company_id, value)
 
 
 def resolve_contact_name(at, value: Any) -> Any:
     contact_id = _coerce_int_id(value)
     if contact_id is None:
         return value
-    if contact_id in _CONTACT_CACHE:
-        return _CONTACT_CACHE[contact_id]
-    try:
-        entity = fetch_one_by_id(at, "Contact", contact_id)
-        if entity:
-            label = _full_name(
-                attr(entity, "FirstName"),
-                attr(entity, "LastName"),
-                safe_name(attr(entity, "EMailAddress", contact_id)),
-            )
-            _CONTACT_CACHE[contact_id] = label
-            return label
-    except Exception:
-        pass
-    return value
+    return resolve_contact_names(at, [contact_id]).get(contact_id, value)
+
+
+def resolve_company_names(at, values: list[Any]) -> dict[int, Any]:
+    candidates = [
+        ("Account", ("AccountName",)),
+        ("Company", ("CompanyName", "Name", "Company")),
+        ("Client", ("ClientName", "Name")),
+    ]
+    return _build_id_to_label_map(at, candidates, values, _COMPANY_CACHE)
+
+
+def resolve_resource_names(at, values: list[Any]) -> dict[int, Any]:
+    return _build_people_label_map(at, "Resource", values, _RESOURCE_CACHE, "UserName")
+
+
+def resolve_contact_names(at, values: list[Any]) -> dict[int, Any]:
+    return _build_people_label_map(at, "Contact", values, _CONTACT_CACHE, "EMailAddress")
 
 
 def resolve_display_value(at, column_name: str, value: Any) -> tuple[str, Any]:
@@ -178,6 +246,10 @@ def resolve_display_value(at, column_name: str, value: Any) -> tuple[str, Any]:
 
     if any(keyword in lowered for keyword in ("technician", "tech", "resource", "owner")):
         return label.replace(" ID", "").replace("Id", ""), resolve_resource_name(at, value)
+
+    if "queue" in lowered:
+        friendly = reverse_picklist(at, "Ticket", "QueueID", value)
+        return label.replace(" ID", "").replace("Id", ""), friendly
 
     if any(keyword in lowered for keyword in ("company", "client", "account", "customer")):
         return label.replace(" ID", "").replace("Id", ""), resolve_company_name(at, value)
@@ -221,8 +293,8 @@ def rows_from_mapping(mapping: dict[str, Any], label: str, value_label: str) -> 
     }
 
 
-def build_helpers() -> dict[str, Any]:
-    return {
+def build_helpers(extra_helpers: dict[str, Any] | None = None) -> dict[str, Any]:
+    helpers = {
         "Query": atws.Query,
         "datetime": datetime,
         "timedelta": timedelta,
@@ -236,9 +308,17 @@ def build_helpers() -> dict[str, Any]:
         "fetch_one_by_id": fetch_one_by_id,
         "attr": attr,
         "reverse_picklist": reverse_picklist,
+        "reverse_picklist_values": reverse_picklist_values,
         "resolve_resource_name": resolve_resource_name,
+        "resolve_resource_names": resolve_resource_names,
         "resolve_company_name": resolve_company_name,
+        "resolve_company_names": resolve_company_names,
         "resolve_contact_name": resolve_contact_name,
+        "resolve_contact_names": resolve_contact_names,
         "safe_name": safe_name,
         "rows_from_mapping": rows_from_mapping,
+        "fetch_many_by_ids": fetch_many_by_ids,
     }
+    if extra_helpers:
+        helpers.update(extra_helpers)
+    return helpers

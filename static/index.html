@@ -1,99 +1,1247 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NTS AI Data Assistant</title>
-    <link rel="stylesheet" href="/static/styles.css" />
-  </head>
-  <body>
-    <div class="orb orb-one"></div>
-    <div class="orb orb-two"></div>
-    <main class="shell">
-      <section class="hero">
-        <div class="face-panel">
-          <div class="face" id="face" aria-hidden="true">
-            <div class="eye eye-left"></div>
-            <div class="eye eye-right"></div>
-            <div class="blush blush-left"></div>
-            <div class="blush blush-right"></div>
-            <div class="mouth"></div>
-          </div>
-          <div class="face-status" id="face-status">Waiting for a question</div>
-          <div class="run-meta">
-            <div class="run-chip" id="run-chip">Idle</div>
-            <div class="run-elapsed" id="run-elapsed">00:00</div>
-          </div>
-          <div class="progress-track" aria-hidden="true">
-            <div class="progress-fill" id="progress-fill"></div>
-          </div>
-        </div>
-        <div class="hero-copy">
-          <p class="eyebrow">NTS AI Data Assistant</p>
-          <h1>Ask Autotask questions in plain English.</h1>
-          <p class="lede">
-            The app uses your configured LLM to write Python with <code>atws</code>,
-            runs it against Autotask, and streams its visible analysis as it works.
-          </p>
-          <form id="chat-form" class="composer">
-            <textarea
-              id="question"
-              name="question"
-              rows="4"
-              placeholder="Top 5 companies by ticket volume in last 30 days"
-            ></textarea>
-            <div class="composer-row">
-              <button type="submit" id="submit-btn">Run Question</button>
-              <div class="examples">
-                <button type="button" class="chip">Top 5 companies by ticket volume in last 30 days</button>
-                <button type="button" class="chip">How many tickets last week?</button>
-                <button type="button" class="chip">Hours worked by each tech this month?</button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </section>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NTS AI Data Assistant</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-      <section class="workspace">
-        <article class="panel">
-          <div class="panel-header">
-            <h2>Live Thinking</h2>
-            <span id="stream-state">Idle</span>
-          </div>
-          <div class="stage-list" id="stage-list">
-            <div class="stage-pill" data-phase="received">Question</div>
-            <div class="stage-pill" data-phase="thinking">Thinking</div>
-            <div class="stage-pill" data-phase="coding">Writing Code</div>
-            <div class="stage-pill" data-phase="autotask">Waiting on Autotask</div>
-            <div class="stage-pill" data-phase="complete">Done</div>
-          </div>
-          <pre id="thinking" class="thinking"></pre>
-        </article>
+  :root {
+    --bg: #080b14;
+    --surface: #0f1623;
+    --surface2: #161e2e;
+    --border: #1f2d45;
+    --accent: #4f8ef7;
+    --accent2: #7c5af7;
+    --green: #22d3a4;
+    --yellow: #f7c948;
+    --red: #f75a5a;
+    --text: #e2eaf8;
+    --muted: #6b7fa3;
+    --code-bg: #0d1321;
+  }
 
-        <article class="panel">
-          <div class="panel-header">
-            <h2>Generated Python</h2>
-          </div>
-          <pre id="code" class="code-block">No code generated yet.</pre>
-        </article>
+  html, body {
+    height: 100%;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+  }
 
-        <article class="panel panel-wide">
-          <div class="panel-header">
-            <h2 id="answer-title">Answer</h2>
-          </div>
-          <div id="summary" class="summary">Results will appear here.</div>
-          <div id="assumptions" class="assumptions"></div>
-          <div class="table-wrap">
-            <table id="results-table">
-              <thead></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-          <ul id="notes" class="notes"></ul>
-        </article>
-      </section>
-    </main>
+  #app {
+    display: grid;
+    grid-template-rows: 56px 1fr 80px;
+    grid-template-columns: 340px 1fr;
+    height: 100vh;
+  }
 
-    <script src="/static/app.js"></script>
-  </body>
+  header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    z-index: 10;
+  }
+
+  header .logo {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  header h1 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  header .status-dot {
+    margin-left: auto;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+  }
+
+  header .status-label {
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  #face-panel {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 32px 20px;
+    gap: 24px;
+    overflow-y: auto;
+  }
+
+  #face-wrap {
+    position: relative;
+    width: 220px;
+    height: 220px;
+    flex-shrink: 0;
+  }
+
+  #ai-face {
+    width: 220px;
+    height: 220px;
+    filter: drop-shadow(0 0 24px rgba(79,142,247,0.35));
+    transition: filter 0.4s;
+  }
+
+  #thought-bubble {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 14px 18px;
+    font-size: 13px;
+    color: var(--text);
+    min-height: 52px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: all 0.3s;
+    position: relative;
+  }
+
+  #thought-bubble::before {
+    content: "";
+    position: absolute;
+    top: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 12px;
+    height: 8px;
+    background: var(--surface2);
+    clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+
+  .thought-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+
+  #thought-text {
+    flex: 1;
+    line-height: 1.5;
+  }
+
+  #step-log {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .step-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    animation: fadeIn 0.3s ease;
+  }
+
+  .step-item.active { color: var(--accent); }
+  .step-item.done-step { color: var(--green); }
+
+  .step-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    margin-top: 5px;
+    flex-shrink: 0;
+  }
+
+  #chat-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    scroll-behavior: smooth;
+  }
+
+  .msg {
+    display: flex;
+    gap: 12px;
+    animation: slideUp 0.25s ease;
+  }
+
+  .msg.user { flex-direction: row-reverse; }
+
+  .msg-bubble {
+    max-width: 76%;
+    border-radius: 18px;
+    padding: 14px 18px;
+    line-height: 1.6;
+    font-size: 14px;
+  }
+
+  .msg.user .msg-bubble {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: white;
+    border-bottom-right-radius: 4px;
+  }
+
+  .msg.ai .msg-bubble {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-bottom-left-radius: 4px;
+    color: var(--text);
+  }
+
+  .ai-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+
+  .inline-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .inline-code-block {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: opacity 0.2s ease, filter 0.2s ease, border-color 0.2s ease;
+  }
+
+  .inline-code-block.running {
+    border-color: var(--yellow);
+    box-shadow: 0 0 0 1px rgba(247,201,72,0.25), 0 0 18px rgba(247,201,72,0.12);
+  }
+
+  .inline-code-block.superseded {
+    opacity: 0.42;
+    filter: grayscale(0.45);
+    border-color: rgba(107, 127, 163, 0.35);
+  }
+
+  .code-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+    font-family: monospace;
+  }
+
+  .code-header span {
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .code-body {
+    padding: 12px 14px;
+    font-size: 12px;
+    font-family: "Fira Code", "Cascadia Code", monospace;
+    white-space: pre;
+    overflow-x: auto;
+    max-height: 280px;
+    color: #abb2bf;
+  }
+
+  .result-block {
+    background: rgba(34,211,164,0.06);
+    border: 1px solid rgba(34,211,164,0.2);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 12px;
+    font-family: monospace;
+    color: var(--green);
+    white-space: pre-wrap;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .result-block.error {
+    background: rgba(247,90,90,0.06);
+    border-color: rgba(247,90,90,0.2);
+    color: var(--red);
+  }
+
+  .cell-status {
+    font-size: 11px;
+    color: var(--yellow);
+    margin-left: auto;
+    letter-spacing: 0.02em;
+  }
+
+  .answer-block {
+    margin-top: 10px;
+    line-height: 1.7;
+  }
+
+  .answer-block p { margin: 0.4em 0; }
+  .answer-block ul, .answer-block ol { padding-left: 1.4em; }
+
+  .answer-block code {
+    background: var(--code-bg);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 12px;
+    font-family: monospace;
+  }
+
+  .answer-block pre {
+    margin: 8px 0;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .answer-block pre code {
+    background: none;
+    padding: 0;
+  }
+
+  .answer-block table {
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 13px;
+    width: 100%;
+  }
+
+  .answer-block th, .answer-block td {
+    border: 1px solid var(--border);
+    padding: 6px 10px;
+    text-align: left;
+  }
+
+  .answer-block th {
+    background: var(--surface);
+    color: var(--accent);
+  }
+
+  .answer-block strong {
+    color: var(--accent);
+  }
+
+  .cursor {
+    display: inline-block;
+    width: 2px;
+    height: 14px;
+    background: var(--accent);
+    animation: blink-cursor 0.8s infinite;
+    vertical-align: middle;
+    margin-left: 2px;
+  }
+
+  #input-area {
+    grid-column: 2;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+  }
+
+  #question-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-size: 14px;
+    color: var(--text);
+    resize: none;
+    outline: none;
+    min-height: 48px;
+    max-height: 120px;
+    font-family: inherit;
+    transition: border-color 0.2s;
+    line-height: 1.5;
+  }
+
+  #question-input:focus { border-color: var(--accent); }
+  #question-input::placeholder { color: var(--muted); }
+
+  #send-btn {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    border: none;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: white;
+    cursor: pointer;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: transform 0.15s, opacity 0.15s;
+  }
+
+  #send-btn:hover:not(:disabled) { transform: scale(1.07); }
+  #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  #suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 24px 12px;
+    grid-column: 2;
+    align-self: end;
+  }
+
+  .suggestion-chip {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 12px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  .suggestion-chip:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes pulse-glow {
+    0%, 100% { filter: drop-shadow(0 0 18px rgba(79,142,247,0.4)); }
+    50% { filter: drop-shadow(0 0 40px rgba(124,90,247,0.8)); }
+  }
+  @keyframes breathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.012); }
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; } }
+  @keyframes blink-cursor { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+
+  #welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 12px;
+    color: var(--muted);
+    font-size: 14px;
+    text-align: center;
+    padding: 40px;
+  }
+
+  #welcome .wicon { font-size: 48px; margin-bottom: 8px; }
+  #welcome h2 { font-size: 20px; color: var(--text); }
+  #welcome p { max-width: 380px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">NTS</div>
+    <h1>AI Assistant (Autotask API version)</h1>
+    <div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
+      <div class="status-dot" id="status-dot"></div>
+      <span class="status-label" id="status-label">Connected</span>
+    </div>
+  </header>
+
+  <div id="face-panel">
+    <div id="face-wrap">
+      <svg id="ai-face" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="headGrad" cx="40%" cy="35%" r="65%">
+            <stop offset="0%" stop-color="#1a2a4a"/>
+            <stop offset="100%" stop-color="#0a0f1e"/>
+          </radialGradient>
+          <radialGradient id="eyeGrad" cx="40%" cy="35%" r="65%">
+            <stop offset="0%" stop-color="#3b82f6"/>
+            <stop offset="100%" stop-color="#1d4ed8"/>
+          </radialGradient>
+          <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="4" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="softglow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="2" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <clipPath id="eye-clip-l"><ellipse cx="62" cy="82" rx="18" ry="20"/></clipPath>
+          <clipPath id="eye-clip-r"><ellipse cx="138" cy="82" rx="18" ry="20"/></clipPath>
+        </defs>
+        <circle id="head-circle" cx="100" cy="100" r="92" fill="url(#headGrad)" stroke="#1e3a6e" stroke-width="2" filter="url(#glow)"/>
+        <ellipse cx="52" cy="118" rx="16" ry="10" fill="#e879f9" opacity="0.12"/>
+        <ellipse cx="148" cy="118" rx="16" ry="10" fill="#e879f9" opacity="0.12"/>
+        <ellipse id="eye-white-l" cx="62" cy="82" rx="18" ry="20" fill="#e8f4ff"/>
+        <circle id="pupil-l" cx="62" cy="82" r="11" fill="url(#eyeGrad)" clip-path="url(#eye-clip-l)" filter="url(#softglow)"/>
+        <circle id="iris-l" cx="62" cy="82" r="6" fill="#1e40af" clip-path="url(#eye-clip-l)"/>
+        <circle cx="66" cy="77" r="4" fill="white" opacity="0.85" clip-path="url(#eye-clip-l)"/>
+        <circle cx="63" cy="79" r="2" fill="white" opacity="0.5" clip-path="url(#eye-clip-l)"/>
+        <ellipse id="eye-white-r" cx="138" cy="82" rx="18" ry="20" fill="#e8f4ff"/>
+        <circle id="pupil-r" cx="138" cy="82" r="11" fill="url(#eyeGrad)" clip-path="url(#eye-clip-r)" filter="url(#softglow)"/>
+        <circle id="iris-r" cx="138" cy="82" r="6" fill="#1e40af" clip-path="url(#eye-clip-r)"/>
+        <circle cx="142" cy="77" r="4" fill="white" opacity="0.85" clip-path="url(#eye-clip-r)"/>
+        <circle cx="139" cy="79" r="2" fill="white" opacity="0.5" clip-path="url(#eye-clip-r)"/>
+        <path d="M 97 97 Q 100 106 103 97" stroke="#4b6393" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+        <path id="mouth" d="M 70 122 Q 100 138 130 122" stroke="#7dd3fc" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+        <g id="think-dots" opacity="0">
+          <circle class="td" cx="82" cy="55" r="5" fill="#4f8ef7"/>
+          <circle class="td" cx="100" cy="48" r="6" fill="#7c5af7"/>
+          <circle class="td" cx="118" cy="55" r="5" fill="#4f8ef7"/>
+        </g>
+        <g id="sparkles" opacity="0">
+          <text x="20" y="45" font-size="16" fill="#f7c948">✦</text>
+          <text x="155" y="38" font-size="12" fill="#22d3a4">✦</text>
+          <text x="10" y="140" font-size="10" fill="#4f8ef7">✦</text>
+          <text x="168" y="148" font-size="14" fill="#f7c948">✦</text>
+        </g>
+      </svg>
+    </div>
+
+    <div id="thought-bubble">
+      <span class="thought-icon">💭</span>
+      <span id="thought-text">Ready to answer your questions</span>
+    </div>
+
+    <div id="step-log"></div>
+  </div>
+
+  <div id="chat-panel">
+    <div id="messages">
+      <div id="welcome">
+        <div class="wicon">🤖</div>
+        <h2>Hello! I'm your NTS AI Assistant</h2>
+        <p>Ask about Autotask tickets, time entries, companies, technicians, and trends. I will keep the conversation context so follow-up questions work naturally.</p>
+      </div>
+    </div>
+    <div id="suggestions">
+      <div class="suggestion-chip" onclick="askSuggestion(this)">Top 5 companies by ticket volume in last 30 days</div>
+      <div class="suggestion-chip" onclick="askSuggestion(this)">Top 5 companies by ticket volume in last 3 days</div>
+      <div class="suggestion-chip" onclick="askSuggestion(this)">How many tickets by issue type in last week?</div>
+      <div class="suggestion-chip" onclick="askSuggestion(this)">Hours worked by each tech this month</div>
+    </div>
+  </div>
+
+  <div id="input-area">
+    <textarea id="question-input" placeholder="Ask anything about your Autotask data..." rows="1" onkeydown="handleKey(event)"></textarea>
+    <button id="send-btn" onclick="sendQuestion()" title="Send (Enter)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<script>
+marked.setOptions({
+  highlight: (code, lang) => {
+    try {
+      return lang ? hljs.highlight(code, { language: lang }).value : hljs.highlightAuto(code).value;
+    } catch {
+      return code;
+    }
+  },
+  breaks: true,
+  gfm: true,
+});
+
+let ws = null;
+let busy = false;
+let currentAiMsg = null;
+let currentCodeEl = null;
+let currentAnswerEl = null;
+let currentCodeRaw = "";
+let currentAnswerRaw = "";
+let stepItems = [];
+let faceAnimFrames = [];
+let faceState = "idle";
+let blinkTimeout = null;
+let conversationHistory = [];
+let currentCodeCellIndex = null;
+let codeBlocksByCell = new Map();
+let codeBlockHistoryByCell = new Map();
+let cellTimerTicker = null;
+let lastStructuredResult = null;
+
+function connect() {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => setStatus("Connected", true);
+  ws.onclose = () => {
+    setStatus("Reconnecting...", false);
+    setTimeout(connect, 2000);
+  };
+  ws.onerror = () => setStatus("Error", false);
+  ws.onmessage = (event) => handleMessage(JSON.parse(event.data));
+}
+
+function setStatus(label, ok) {
+  document.getElementById("status-label").textContent = label;
+  const dot = document.getElementById("status-dot");
+  dot.style.background = ok ? "var(--green)" : "var(--red)";
+  dot.style.boxShadow = ok ? "0 0 8px var(--green)" : "0 0 8px var(--red)";
+}
+
+function handleMessage(msg) {
+  switch (msg.type) {
+    case "step":
+      addStep(msg.step, msg.text);
+      setThought(msg.step, msg.text);
+      setFaceState(msg.step);
+      break;
+
+    case "code_start":
+      currentCodeRaw = "";
+      currentCodeCellIndex = msg.cell_index ?? null;
+      currentCodeEl = createCodeBlock(msg.title || "Generated Python", currentCodeCellIndex);
+      break;
+
+    case "code_delta":
+      currentCodeRaw += msg.content || "";
+      if (currentCodeEl) {
+        const body = currentCodeEl.querySelector(".code-body");
+        if (body) body.textContent = currentCodeRaw;
+        scrollToBottom();
+      }
+      break;
+
+    case "code_end":
+      if (currentCodeEl) {
+        const body = currentCodeEl.querySelector(".code-body");
+        if (body) {
+          body.textContent = currentCodeRaw;
+          hljs.highlightElement(body);
+        }
+        const spinner = currentCodeEl.querySelector(".code-header .spinner");
+        if (spinner) spinner.remove();
+      }
+      currentCodeEl = null;
+      currentCodeCellIndex = null;
+      clearRunningCell();
+      break;
+
+    case "cell_running":
+      markRunningCell(msg.cell_index, msg.cell_purpose || msg.cell_name || "Running");
+      break;
+
+    case "result":
+      addResult(msg.content || "", msg.cell_index ?? null);
+      break;
+
+    case "cell_error":
+      addErrorMsg(msg.content || "Something went wrong.", msg.cell_index ?? null);
+      break;
+
+    case "text_delta":
+      if (!currentAnswerEl) {
+        currentAnswerEl = createAnswerEl();
+        currentAnswerRaw = "";
+      }
+      currentAnswerRaw += msg.content || "";
+      renderAnswer(currentAnswerEl, currentAnswerRaw, true);
+      scrollToBottom();
+      break;
+
+    case "final_result_data":
+      lastStructuredResult = msg.result || null;
+      break;
+
+    case "final_context_data":
+      break;
+
+    case "done":
+      if (currentAnswerEl && currentAnswerRaw) {
+        renderAnswer(currentAnswerEl, currentAnswerRaw, false);
+        conversationHistory.push({ role: "assistant", content: currentAnswerRaw });
+      }
+      currentAiMsg = null;
+      currentCodeEl = null;
+      currentAnswerEl = null;
+      currentCodeRaw = "";
+      currentAnswerRaw = "";
+      currentCodeCellIndex = null;
+      codeBlocksByCell = new Map();
+      codeBlockHistoryByCell = new Map();
+      clearRunningCell();
+      markLastStepDone();
+      setThought("done", "Done! Ask me anything else.");
+      setFaceState("done");
+      setBusy(false);
+      break;
+
+    case "error":
+      addErrorMsg(msg.content || "Something went wrong.");
+      conversationHistory.push({ role: "assistant", content: `Error: ${msg.content || "Something went wrong."}` });
+      setThought("error", msg.content || "Something went wrong.");
+      setFaceState("idle");
+      setBusy(false);
+      break;
+  }
+}
+
+function ensureAiMsg() {
+  if (!currentAiMsg) {
+    const welcome = document.getElementById("welcome");
+    if (welcome) welcome.remove();
+
+    const container = document.createElement("div");
+    container.className = "msg ai";
+    container.innerHTML = `
+      <div class="ai-avatar">🤖</div>
+      <div class="msg-bubble">
+        <div class="inline-steps"></div>
+      </div>`;
+    document.getElementById("messages").appendChild(container);
+    currentAiMsg = container.querySelector(".inline-steps");
+    scrollToBottom();
+  }
+  return currentAiMsg;
+}
+
+function createCodeBlock(title, cellIndex) {
+  const steps = ensureAiMsg();
+  const el = document.createElement("div");
+  el.className = "inline-code-block";
+  if (cellIndex !== null && cellIndex !== undefined) {
+    el.dataset.cellIndex = String(cellIndex);
+  }
+  el.innerHTML = `
+    <div class="code-header">
+      <span>${escapeHtml(title)}</span>
+      <div class="cell-status"></div>
+      <div class="spinner"></div>
+    </div>
+    <div class="code-body" style="min-height:40px"></div>`;
+
+  if (cellIndex !== null && cellIndex !== undefined) {
+    const existingBlocks = codeBlockHistoryByCell.get(cellIndex) || [];
+    const previousBlock = existingBlocks[existingBlocks.length - 1];
+    if (previousBlock && previousBlock.parentNode === steps) {
+      previousBlock.classList.remove("running");
+      previousBlock.classList.add("superseded");
+      const oldStatus = previousBlock.querySelector(".cell-status");
+      if (oldStatus) oldStatus.textContent = "Superseded";
+      previousBlock.insertAdjacentElement("afterend", el);
+    } else {
+      steps.appendChild(el);
+    }
+    existingBlocks.push(el);
+    codeBlockHistoryByCell.set(cellIndex, existingBlocks);
+    codeBlocksByCell.set(cellIndex, el);
+  } else {
+    steps.appendChild(el);
+  }
+  scrollToBottom();
+  return el;
+}
+
+function formatCellElapsed(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
+function updateCellTimerStatus(block, prefix) {
+  if (!block) return;
+  const startedAt = Number(block.dataset.startedAt || 0);
+  const status = block.querySelector(".cell-status");
+  if (!status) return;
+  if (!startedAt) {
+    status.textContent = prefix;
+    return;
+  }
+  status.textContent = `${prefix} • ${formatCellElapsed(Date.now() - startedAt)}`;
+}
+
+function ensureCellTimerTicker() {
+  if (cellTimerTicker) return;
+  cellTimerTicker = setInterval(() => {
+    codeBlocksByCell.forEach((block) => {
+      if (block.classList.contains("running")) {
+        updateCellTimerStatus(block, "Running");
+      }
+    });
+  }, 250);
+}
+
+function stopCellTimerTickerIfIdle() {
+  const hasRunning = Array.from(codeBlocksByCell.values()).some((block) => block.classList.contains("running"));
+  if (!hasRunning && cellTimerTicker) {
+    clearInterval(cellTimerTicker);
+    cellTimerTicker = null;
+  }
+}
+
+function addResult(content, cellIndex) {
+  const targetBlock = cellIndex !== null && cellIndex !== undefined ? codeBlocksByCell.get(cellIndex) : null;
+  const el = document.createElement("div");
+  el.className = "result-block";
+  el.textContent = content;
+  if (targetBlock) {
+    targetBlock.appendChild(el);
+  } else {
+    const steps = ensureAiMsg();
+    steps.appendChild(el);
+  }
+  if (targetBlock) {
+    targetBlock.classList.remove("running");
+    const status = targetBlock.querySelector(".cell-status");
+    if (status) updateCellTimerStatus(targetBlock, "Completed");
+  }
+  stopCellTimerTickerIfIdle();
+  scrollToBottom();
+}
+
+function clearCellOutputs(cellIndex) {
+  const block = codeBlocksByCell.get(cellIndex);
+  if (!block) return;
+  block.querySelectorAll(".result-block").forEach((node) => node.remove());
+}
+
+function clearRunningCell() {
+  codeBlocksByCell.forEach((block) => {
+    block.classList.remove("running");
+    const status = block.querySelector(".cell-status");
+    if (status && status.textContent.startsWith("Running")) {
+      status.textContent = "";
+    }
+  });
+  stopCellTimerTickerIfIdle();
+}
+
+function markRunningCell(cellIndex, label) {
+  clearRunningCell();
+  const block = codeBlocksByCell.get(cellIndex);
+  if (!block) return;
+  clearCellOutputs(cellIndex);
+  block.classList.add("running");
+  block.dataset.startedAt = String(Date.now());
+  updateCellTimerStatus(block, "Running");
+  ensureCellTimerTicker();
+  scrollToBottom();
+}
+
+function createAnswerEl() {
+  const steps = ensureAiMsg();
+  const el = document.createElement("div");
+  el.className = "answer-block";
+  steps.appendChild(el);
+  scrollToBottom();
+  return el;
+}
+
+function renderAnswer(el, raw, withCursor) {
+  el.innerHTML = marked.parse(raw);
+  if (withCursor) {
+    const cursor = document.createElement("span");
+    cursor.className = "cursor";
+    el.appendChild(cursor);
+  }
+  el.querySelectorAll("pre code").forEach((block) => {
+    try { hljs.highlightElement(block); } catch {}
+  });
+}
+
+function addErrorMsg(text, cellIndex = null) {
+  const targetBlock = cellIndex !== null && cellIndex !== undefined ? codeBlocksByCell.get(cellIndex) : null;
+  const el = document.createElement("div");
+  el.className = "result-block error";
+  el.textContent = text;
+  if (targetBlock) {
+    targetBlock.appendChild(el);
+    targetBlock.classList.remove("running");
+    updateCellTimerStatus(targetBlock, "Failed");
+  } else {
+    const steps = ensureAiMsg();
+    steps.appendChild(el);
+  }
+  stopCellTimerTickerIfIdle();
+  scrollToBottom();
+}
+
+function scrollToBottom() {
+  const messages = document.getElementById("messages");
+  messages.scrollTop = messages.scrollHeight;
+}
+
+const STEP_ICONS = {
+  analyzing: "🔍",
+  coding: "💻",
+  executing: "⚡",
+  done: "✅",
+  error: "❌",
+};
+
+function addStep(step, text) {
+  const log = document.getElementById("step-log");
+  log.querySelectorAll(".step-item.active").forEach((el) => el.classList.remove("active"));
+
+  const el = document.createElement("div");
+  el.className = "step-item active";
+  el.innerHTML = `<div class="step-dot"></div><span>${STEP_ICONS[step] || "•"} ${escapeHtml(text || "")}</span>`;
+  log.appendChild(el);
+  stepItems.push(el);
+}
+
+function markLastStepDone() {
+  stepItems.forEach((el) => {
+    el.classList.remove("active");
+    el.classList.add("done-step");
+  });
+  stepItems = [];
+}
+
+const THOUGHT_MAP = {
+  analyzing: { icon: "🧠", text: "Analyzing your question..." },
+  coding: { icon: "💻", text: "Writing Python code..." },
+  executing: { icon: "⚡", text: "Executing data query..." },
+  done: { icon: "✅", text: "Done! Ask me anything else." },
+  idle: { icon: "💭", text: "Ready to answer your questions" },
+  error: { icon: "⚠️", text: "Something went wrong" },
+};
+
+function setThought(step, text) {
+  const thought = THOUGHT_MAP[step] || { icon: "💭", text: text || "Working..." };
+  document.querySelector(".thought-icon").textContent = thought.icon;
+  document.getElementById("thought-text").textContent = text || thought.text;
+}
+
+const pupilL = () => document.getElementById("pupil-l");
+const pupilR = () => document.getElementById("pupil-r");
+const irisL = () => document.getElementById("iris-l");
+const irisR = () => document.getElementById("iris-r");
+const eyeWL = () => document.getElementById("eye-white-l");
+const eyeWR = () => document.getElementById("eye-white-r");
+const mouth = () => document.getElementById("mouth");
+const thinkDots = () => document.getElementById("think-dots");
+const sparkles = () => document.getElementById("sparkles");
+const face = () => document.getElementById("ai-face");
+
+function setFaceState(state) {
+  if (faceState === state) return;
+  faceState = state;
+  clearAnimations();
+
+  switch (state) {
+    case "idle":
+      setMouth("neutral");
+      hideDots();
+      hideSparkles();
+      face().style.animation = "breathe 4s ease-in-out infinite";
+      face().style.filter = "drop-shadow(0 0 24px rgba(79,142,247,0.35))";
+      scheduleBlink();
+      break;
+    case "analyzing":
+    case "coding":
+      setMouth("thinking");
+      showDots();
+      hideSparkles();
+      face().style.animation = "none";
+      face().style.filter = "drop-shadow(0 0 32px rgba(124,90,247,0.6))";
+      startEyeDart();
+      break;
+    case "executing":
+      setMouth("focused");
+      showDots();
+      hideSparkles();
+      face().style.animation = "none";
+      face().style.filter = "drop-shadow(0 0 36px rgba(79,142,247,0.8))";
+      startEyeSpin();
+      break;
+    case "done":
+      setMouth("smile");
+      hideDots();
+      showSparkles();
+      face().style.animation = "pulse-glow 2s ease-in-out 3";
+      face().style.filter = "drop-shadow(0 0 40px rgba(34,211,164,0.6))";
+      centerPupils();
+      break;
+  }
+}
+
+function clearAnimations() {
+  faceAnimFrames.forEach((id) => cancelAnimationFrame(id));
+  faceAnimFrames = [];
+  if (blinkTimeout) {
+    clearTimeout(blinkTimeout);
+    blinkTimeout = null;
+  }
+  resetEyes();
+}
+
+function resetEyes() {
+  setPupil(pupilL(), 62, 82);
+  setPupil(pupilR(), 138, 82);
+  setPupil(irisL(), 62, 82);
+  setPupil(irisR(), 138, 82);
+  eyeWL().setAttribute("ry", "20");
+  eyeWR().setAttribute("ry", "20");
+}
+
+function centerPupils() {
+  setPupil(pupilL(), 62, 82);
+  setPupil(pupilR(), 138, 82);
+  setPupil(irisL(), 62, 82);
+  setPupil(irisR(), 138, 82);
+}
+
+function setPupil(el, x, y) {
+  if (!el) return;
+  el.setAttribute("cx", x);
+  el.setAttribute("cy", y);
+}
+
+function setMouth(shape) {
+  const m = mouth();
+  if (!m) return;
+  const paths = {
+    neutral: "M 70 122 Q 100 134 130 122",
+    thinking: "M 72 125 Q 100 128 128 125",
+    focused: "M 74 124 L 126 124",
+    smile: "M 60 118 Q 100 150 140 118",
+  };
+  m.setAttribute("d", paths[shape] || paths.neutral);
+  m.setAttribute("stroke", shape === "smile" ? "#22d3a4" : shape === "thinking" ? "#a78bfa" : "#7dd3fc");
+}
+
+function showDots() {
+  const td = thinkDots();
+  if (!td) return;
+  td.setAttribute("opacity", "1");
+  td.querySelectorAll(".td").forEach((dot, index) => {
+    dot.style.animation = `breathe ${0.8 + index * 0.2}s ease-in-out infinite alternate`;
+  });
+}
+
+function hideDots() {
+  const td = thinkDots();
+  if (td) td.setAttribute("opacity", "0");
+}
+
+function showSparkles() {
+  const sp = sparkles();
+  if (sp) sp.setAttribute("opacity", "1");
+}
+
+function hideSparkles() {
+  const sp = sparkles();
+  if (sp) sp.setAttribute("opacity", "0");
+}
+
+const DART_PATTERNS = [
+  { lx: 58, ly: 78, rx: 134, ry: 78 },
+  { lx: 66, ly: 86, rx: 142, ry: 86 },
+  { lx: 60, ly: 82, rx: 136, ry: 82 },
+  { lx: 64, ly: 79, rx: 140, ry: 79 },
+  { lx: 62, ly: 85, rx: 138, ry: 85 },
+];
+let dartIdx = 0;
+
+function startEyeDart() {
+  dartIdx = 0;
+  const doDart = () => {
+    if (faceState !== "analyzing" && faceState !== "coding") return;
+    const pattern = DART_PATTERNS[dartIdx % DART_PATTERNS.length];
+    animatePupilTo(pupilL(), pattern.lx, pattern.ly, 300);
+    animatePupilTo(irisL(), pattern.lx, pattern.ly, 300);
+    animatePupilTo(pupilR(), pattern.rx, pattern.ry, 300);
+    animatePupilTo(irisR(), pattern.rx, pattern.ry, 300);
+    dartIdx += 1;
+    setTimeout(doDart, 700 + Math.random() * 600);
+  };
+  doDart();
+}
+
+function startEyeSpin() {
+  let angle = 0;
+  const spin = () => {
+    if (faceState !== "executing") return;
+    angle += 0.15;
+    const lx = 62 + Math.cos(angle) * 5;
+    const ly = 82 + Math.sin(angle) * 4;
+    const rx = 138 + Math.cos(angle + Math.PI) * 5;
+    const ry = 82 + Math.sin(angle + Math.PI) * 4;
+    setPupil(pupilL(), lx, ly);
+    setPupil(irisL(), lx, ly);
+    setPupil(pupilR(), rx, ry);
+    setPupil(irisR(), rx, ry);
+    faceAnimFrames.push(requestAnimationFrame(spin));
+  };
+  faceAnimFrames.push(requestAnimationFrame(spin));
+}
+
+function animatePupilTo(el, tx, ty, duration) {
+  if (!el) return;
+  const sx = parseFloat(el.getAttribute("cx"));
+  const sy = parseFloat(el.getAttribute("cy"));
+  const start = performance.now();
+
+  const step = (now) => {
+    const t = Math.min((now - start) / duration, 1);
+    const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    setPupil(el, sx + (tx - sx) * ease, sy + (ty - sy) * ease);
+    if (t < 1) faceAnimFrames.push(requestAnimationFrame(step));
+  };
+
+  faceAnimFrames.push(requestAnimationFrame(step));
+}
+
+function scheduleBlink() {
+  if (faceState !== "idle") return;
+  const delay = 2000 + Math.random() * 4000;
+  blinkTimeout = setTimeout(() => {
+    doBlink();
+    scheduleBlink();
+  }, delay);
+}
+
+function doBlink() {
+  const wl = eyeWL();
+  const wr = eyeWR();
+  if (!wl || !wr) return;
+  wl.setAttribute("ry", "1");
+  wr.setAttribute("ry", "1");
+  setTimeout(() => {
+    wl.setAttribute("ry", "20");
+    wr.setAttribute("ry", "20");
+  }, 120);
+}
+
+function addUserMsg(text) {
+  const welcome = document.getElementById("welcome");
+  if (welcome) welcome.remove();
+  const el = document.createElement("div");
+  el.className = "msg user";
+  el.innerHTML = `<div class="msg-bubble">${escapeHtml(text)}</div>`;
+  document.getElementById("messages").appendChild(el);
+  scrollToBottom();
+}
+
+function setBusy(value) {
+  busy = value;
+  document.getElementById("send-btn").disabled = value;
+  const input = document.getElementById("question-input");
+  input.disabled = value;
+  if (!value) {
+    input.focus();
+    setTimeout(() => {
+      if (faceState === "done") setFaceState("idle");
+    }, 3000);
+  }
+}
+
+function sendQuestion() {
+  if (busy || !ws || ws.readyState !== WebSocket.OPEN) return;
+  const input = document.getElementById("question-input");
+  const question = input.value.trim();
+  if (!question) return;
+
+  input.value = "";
+  input.style.height = "auto";
+  setBusy(true);
+  addUserMsg(question);
+  conversationHistory.push({ role: "user", content: question });
+
+  currentAiMsg = null;
+  currentCodeEl = null;
+  currentAnswerEl = null;
+  currentCodeRaw = "";
+  currentAnswerRaw = "";
+  currentCodeCellIndex = null;
+  codeBlocksByCell = new Map();
+  codeBlockHistoryByCell = new Map();
+  stepItems = [];
+  document.getElementById("step-log").innerHTML = "";
+
+  setFaceState("analyzing");
+  setThought("analyzing", "Analyzing your question...");
+
+  ws.send(JSON.stringify({ question, history: conversationHistory, last_result: lastStructuredResult }));
+}
+
+function handleKey(event) {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    sendQuestion();
+  }
+  const ta = event.target;
+  ta.style.height = "auto";
+  ta.style.height = Math.min(ta.scrollHeight, 120) + "px";
+}
+
+function askSuggestion(el) {
+  document.getElementById("question-input").value = el.textContent;
+  sendQuestion();
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+connect();
+setFaceState("idle");
+
+document.getElementById("question-input").addEventListener("input", function () {
+  this.style.height = "auto";
+  this.style.height = Math.min(this.scrollHeight, 120) + "px";
+});
+</script>
+</body>
 </html>
