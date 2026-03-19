@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NTS AI Data Assistant</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="orb orb-one"></div>
+    <div class="orb orb-two"></div>
+    <main class="shell">
+      <section class="hero">
+        <div class="face-panel">
+          <div class="face" id="face" aria-hidden="true">
+            <div class="eye eye-left"></div>
+            <div class="eye eye-right"></div>
+            <div class="blush blush-left"></div>
+            <div class="blush blush-right"></div>
+            <div class="mouth"></div>
+          </div>
+          <div class="face-status" id="face-status">Waiting for a question</div>
+          <div class="run-meta">
+            <div class="run-chip" id="run-chip">Idle</div>
+            <div class="run-elapsed" id="run-elapsed">00:00</div>
+          </div>
+          <div class="progress-track" aria-hidden="true">
+            <div class="progress-fill" id="progress-fill"></div>
+          </div>
+        </div>
+        <div class="hero-copy">
+          <p class="eyebrow">NTS AI Data Assistant</p>
+          <h1>Ask Autotask questions in plain English.</h1>
+          <p class="lede">
+            The app uses your configured LLM to write Python with <code>atws</code>,
+            runs it against Autotask, and streams its visible analysis as it works.
+          </p>
+          <form id="chat-form" class="composer">
+            <textarea
+              id="question"
+              name="question"
+              rows="4"
+              placeholder="Top 5 companies by ticket volume in last 30 days"
+            ></textarea>
+            <div class="composer-row">
+              <button type="submit" id="submit-btn">Run Question</button>
+              <div class="examples">
+                <button type="button" class="chip">Top 5 companies by ticket volume in last 30 days</button>
+                <button type="button" class="chip">How many tickets last week?</button>
+                <button type="button" class="chip">Hours worked by each tech this month?</button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <article class="panel">
+          <div class="panel-header">
+            <h2>Live Thinking</h2>
+            <span id="stream-state">Idle</span>
+          </div>
+          <div class="stage-list" id="stage-list">
+            <div class="stage-pill" data-phase="received">Question</div>
+            <div class="stage-pill" data-phase="thinking">Thinking</div>
+            <div class="stage-pill" data-phase="coding">Writing Code</div>
+            <div class="stage-pill" data-phase="autotask">Waiting on Autotask</div>
+            <div class="stage-pill" data-phase="complete">Done</div>
+          </div>
+          <pre id="thinking" class="thinking"></pre>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2>Generated Python</h2>
+          </div>
+          <pre id="code" class="code-block">No code generated yet.</pre>
+        </article>
+
+        <article class="panel panel-wide">
+          <div class="panel-header">
+            <h2 id="answer-title">Answer</h2>
+          </div>
+          <div id="summary" class="summary">Results will appear here.</div>
+          <div id="assumptions" class="assumptions"></div>
+          <div class="table-wrap">
+            <table id="results-table">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <ul id="notes" class="notes"></ul>
+        </article>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

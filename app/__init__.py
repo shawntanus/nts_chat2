@@ -1,0 +1,1 @@
+"""NTS chat application package."""
