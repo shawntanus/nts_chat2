@@ -19,8 +19,9 @@ from app.executor import execute_generated_code, make_json_safe, summarize_conte
 from app.llm import GeneratedProgram, LLMService
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-STATIC_DIR = BASE_DIR / "static"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SRC_DIR = PROJECT_ROOT / "src"
+STATIC_DIR = SRC_DIR / "static"
 MANIFEST_SAMPLE_FIELDS = ("AccountID", "CompanyID", "QueueID", "IssueType", "CreateDate", "Status")
 
 
@@ -594,7 +595,7 @@ async def _chat_events(
 
 
 def create_app() -> FastAPI:
-    config = load_config(BASE_DIR / "config.yaml")
+    config = load_config(PROJECT_ROOT / "config.yaml")
     app = FastAPI(title="NTS AI Data Assistant")
     app.add_middleware(
         CORSMiddleware,
@@ -703,7 +704,7 @@ app = create_app()
 def run() -> None:
     import uvicorn
 
-    config: AppConfig = load_config(BASE_DIR / "config.yaml")
+    config: AppConfig = load_config(PROJECT_ROOT / "config.yaml")
     uvicorn.run("app.main:app", host=config.server.host, port=config.server.port, reload=False)
 
 
