@@ -479,7 +479,7 @@ async def _chat_events(
 
     yield {"type": "step", "step": "executing", "text": "Connecting to Autotask and running the generated program."}
     at_client = await asyncio.to_thread(connect_autotask, config.autotask)
-    max_attempts = 3
+    max_attempts = 20
     result = None
     latest_context = cached_context or {}
     current_program = program
