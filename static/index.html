@@ -570,16 +570,16 @@
       </div>
     </div>
     <div id="suggestions">
-      <div class="suggestion-chip" onclick="askSuggestion(this)">Top 5 companies by ticket volume in last 30 days</div>
-      <div class="suggestion-chip" onclick="askSuggestion(this)">Top 5 companies by ticket volume in last 3 days</div>
-      <div class="suggestion-chip" onclick="askSuggestion(this)">How many tickets by issue type in last week?</div>
-      <div class="suggestion-chip" onclick="askSuggestion(this)">Hours worked by each tech this month</div>
+      <div class="suggestion-chip">Top 5 companies by ticket volume in last 30 days</div>
+      <div class="suggestion-chip">Top 5 companies by ticket volume in last 3 days</div>
+      <div class="suggestion-chip">How many tickets by issue type in last week?</div>
+      <div class="suggestion-chip">Hours worked by each tech this month</div>
     </div>
   </div>
 
   <div id="input-area">
-    <textarea id="question-input" placeholder="Ask anything about your Autotask data..." rows="1" onkeydown="handleKey(event)"></textarea>
-    <button id="send-btn" onclick="sendQuestion()" title="Send (Enter)">
+    <textarea id="question-input" placeholder="Ask anything about your Autotask data..." rows="1"></textarea>
+    <button id="send-btn" title="Send (Enter)">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
       </svg>
@@ -612,7 +612,6 @@ let faceAnimFrames = [];
 let faceState = "idle";
 let blinkTimeout = null;
 let conversationHistory = [];
-let currentCodeCellIndex = null;
 let codeBlocksByCell = new Map();
 let codeBlockHistoryByCell = new Map();
 let cellTimerTicker = null;
@@ -648,8 +647,7 @@ function handleMessage(msg) {
 
     case "code_start":
       currentCodeRaw = "";
-      currentCodeCellIndex = msg.cell_index ?? null;
-      currentCodeEl = createCodeBlock(msg.title || "Generated Python", currentCodeCellIndex);
+      currentCodeEl = createCodeBlock(msg.title || "Generated Python", msg.cell_index ?? null);
       break;
 
     case "code_delta":
@@ -672,12 +670,11 @@ function handleMessage(msg) {
         if (spinner) spinner.remove();
       }
       currentCodeEl = null;
-      currentCodeCellIndex = null;
       clearRunningCell();
       break;
 
     case "cell_running":
-      markRunningCell(msg.cell_index, msg.cell_purpose || msg.cell_name || "Running");
+      markRunningCell(msg.cell_index);
       break;
 
     case "result":
@@ -715,7 +712,6 @@ function handleMessage(msg) {
       currentAnswerEl = null;
       currentCodeRaw = "";
       currentAnswerRaw = "";
-      currentCodeCellIndex = null;
       codeBlocksByCell = new Map();
       codeBlockHistoryByCell = new Map();
       clearRunningCell();
@@ -866,7 +862,7 @@ function clearRunningCell() {
   stopCellTimerTickerIfIdle();
 }
 
-function markRunningCell(cellIndex, label) {
+function markRunningCell(cellIndex) {
   clearRunningCell();
   const block = codeBlocksByCell.get(cellIndex);
   if (!block) return;
@@ -1204,7 +1200,6 @@ function sendQuestion() {
   currentAnswerEl = null;
   currentCodeRaw = "";
   currentAnswerRaw = "";
-  currentCodeCellIndex = null;
   codeBlocksByCell = new Map();
   codeBlockHistoryByCell = new Map();
   stepItems = [];
@@ -1238,9 +1233,14 @@ function escapeHtml(str) {
 connect();
 setFaceState("idle");
 
+document.getElementById("question-input").addEventListener("keydown", handleKey);
 document.getElementById("question-input").addEventListener("input", function () {
   this.style.height = "auto";
   this.style.height = Math.min(this.scrollHeight, 120) + "px";
+});
+document.getElementById("send-btn").addEventListener("click", sendQuestion);
+document.querySelectorAll(".suggestion-chip").forEach((chip) => {
+  chip.addEventListener("click", () => askSuggestion(chip));
 });
 </script>
 </body>

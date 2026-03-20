@@ -350,21 +350,87 @@ class LLMService:
         lines = [f"{item.get('role', 'unknown')}: {item.get('content', '').strip()}" for item in trimmed]
         return "\n".join(lines)
 
+    def _create_response(
+        self,
+        *,
+        system_prompt: str,
+        prompt: str,
+        max_output_tokens: int,
+        temperature: float,
+        stream: bool = False,
+    ):
+        if self.config.provider == "openai":
+            return self.client.responses.create(
+                model=self.config.model,
+                instructions=system_prompt,
+                input=prompt,
+                max_output_tokens=max_output_tokens,
+                temperature=temperature,
+                stream=stream,
+            )
+
+        return self.client.messages.create(
+            model=self.config.model,
+            system=system_prompt,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_output_tokens,
+            temperature=temperature,
+            stream=stream,
+        )
+
+    def _request_json(
+        self,
+        *,
+        system_prompt: str,
+        prompt: str,
+        max_output_tokens: int,
+        temperature: float,
+    ) -> dict[str, Any]:
+        response = self._create_response(
+            system_prompt=system_prompt,
+            prompt=prompt,
+            max_output_tokens=max_output_tokens,
+            temperature=temperature,
+        )
+        if self.config.provider == "openai":
+            return _extract_json(_extract_text_from_openai_response(response))
+
+        text = "".join(block.text for block in response.content if getattr(block, "type", "") == "text")
+        return _extract_json(text)
+
+    def _request_text(
+        self,
+        *,
+        system_prompt: str,
+        prompt: str,
+        max_output_tokens: int,
+        temperature: float,
+    ) -> str:
+        response = self._create_response(
+            system_prompt=system_prompt,
+            prompt=prompt,
+            max_output_tokens=max_output_tokens,
+            temperature=temperature,
+        )
+        if self.config.provider == "openai":
+            return _extract_text_from_openai_response(response).strip()
+
+        return "".join(block.text for block in response.content if getattr(block, "type", "") == "text").strip()
+
     def stream_strategy(self, question: str, history: list[dict[str, str]] | None = None) -> Generator[str, None, None]:
         prompt = (
             f"Conversation so far:\n{self._history_block(history)}\n\n"
             f"Latest question: {question}\n\n"
             "Write 4-6 short realtime updates."
         )
+        stream = self._create_response(
+            system_prompt=STRATEGY_SYSTEM_PROMPT,
+            prompt=prompt,
+            max_output_tokens=min(self.config.max_tokens, 300),
+            temperature=0.6,
+            stream=True,
+        )
         if self.config.provider == "openai":
-            stream = self.client.responses.create(
-                model=self.config.model,
-                instructions=STRATEGY_SYSTEM_PROMPT,
-                input=prompt,
-                max_output_tokens=min(self.config.max_tokens, 300),
-                temperature=0.6,
-                stream=True,
-            )
             for event in stream:
                 event_type = getattr(event, "type", "")
                 if event_type == "response.output_text.delta":
@@ -373,14 +439,6 @@ class LLMService:
                         yield delta
             return
 
-        stream = self.client.messages.create(
-            model=self.config.model,
-            system=STRATEGY_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=min(self.config.max_tokens, 300),
-            temperature=0.6,
-            stream=True,
-        )
         for event in stream:
             if getattr(event, "type", "") == "content_block_delta":
                 delta = getattr(getattr(event, "delta", None), "text", "")
@@ -401,25 +459,12 @@ class LLMService:
             f"Existing structured result:\n{json.dumps(last_result, ensure_ascii=False)}\n\n"
             "Decide whether the existing result is enough. Return only JSON."
         )
-        if self.config.provider == "openai":
-            response = self.client.responses.create(
-                model=self.config.model,
-                instructions=REUSE_DECISION_SYSTEM_PROMPT,
-                input=prompt,
-                max_output_tokens=min(self.config.max_tokens, 200),
-                temperature=0,
-            )
-            payload = _extract_json(_extract_text_from_openai_response(response))
-        else:
-            response = self.client.messages.create(
-                model=self.config.model,
-                system=REUSE_DECISION_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=min(self.config.max_tokens, 200),
-                temperature=0,
-            )
-            text = "".join(block.text for block in response.content if getattr(block, "type", "") == "text")
-            payload = _extract_json(text)
+        payload = self._request_json(
+            system_prompt=REUSE_DECISION_SYSTEM_PROMPT,
+            prompt=prompt,
+            max_output_tokens=min(self.config.max_tokens, 200),
+            temperature=0,
+        )
         return bool(payload.get("reuse_existing_result")), str(payload.get("rationale", "")).strip()
 
     def render_result_markdown(
@@ -434,27 +479,12 @@ class LLMService:
             f"Structured result to use:\n{json.dumps(last_result, ensure_ascii=False)}\n\n"
             "Return Markdown only."
         )
-        if self.config.provider == "openai":
-            response = self.client.responses.create(
-                model=self.config.model,
-                instructions=RESULT_RENDER_SYSTEM_PROMPT,
-                input=prompt,
-                max_output_tokens=min(self.config.max_tokens, 800),
-                temperature=0.2,
-            )
-            return _extract_text_from_openai_response(response).strip()
-
-        response = self.client.messages.create(
-            model=self.config.model,
-            system=RESULT_RENDER_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=min(self.config.max_tokens, 800),
+        return self._request_text(
+            system_prompt=RESULT_RENDER_SYSTEM_PROMPT,
+            prompt=prompt,
+            max_output_tokens=min(self.config.max_tokens, 800),
             temperature=0.2,
         )
-        return "".join(block.text for block in response.content if getattr(block, "type", "") == "text").strip()
-
-    def generate_program(self, question: str, history: list[dict[str, str]] | None = None) -> GeneratedProgram:
-        return self.generate_program_with_context(question, history, None)
 
     def generate_program_with_context(
         self,
@@ -485,25 +515,12 @@ class LLMService:
             f"Cached context manifest:\n{cached_context_summary}\n\n"
             "Decide whether the cached context is enough. Return only JSON."
         )
-        if self.config.provider == "openai":
-            response = self.client.responses.create(
-                model=self.config.model,
-                instructions=CACHED_CONTEXT_DECISION_SYSTEM_PROMPT,
-                input=prompt,
-                max_output_tokens=min(self.config.max_tokens, 200),
-                temperature=0,
-            )
-            payload = _extract_json(_extract_text_from_openai_response(response))
-        else:
-            response = self.client.messages.create(
-                model=self.config.model,
-                system=CACHED_CONTEXT_DECISION_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=min(self.config.max_tokens, 200),
-                temperature=0,
-            )
-            text = "".join(block.text for block in response.content if getattr(block, "type", "") == "text")
-            payload = _extract_json(text)
+        payload = self._request_json(
+            system_prompt=CACHED_CONTEXT_DECISION_SYSTEM_PROMPT,
+            prompt=prompt,
+            max_output_tokens=min(self.config.max_tokens, 200),
+            temperature=0,
+        )
         return bool(payload.get("reuse_cached_context")), str(payload.get("rationale", "")).strip()
 
     def repair_program(
@@ -571,25 +588,12 @@ class LLMService:
         return "\n\n".join(blocks)
 
     def _request_program(self, user_prompt: str) -> GeneratedProgram:
-        if self.config.provider == "openai":
-            response = self.client.responses.create(
-                model=self.config.model,
-                instructions=CODE_SYSTEM_PROMPT,
-                input=user_prompt,
-                max_output_tokens=self.config.max_tokens,
-                temperature=0.2,
-            )
-            payload = _extract_json(_extract_text_from_openai_response(response))
-        else:
-            response = self.client.messages.create(
-                model=self.config.model,
-                system=CODE_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_prompt}],
-                max_tokens=self.config.max_tokens,
-                temperature=0.2,
-            )
-            text = "".join(block.text for block in response.content if getattr(block, "type", "") == "text")
-            payload = _extract_json(text)
+        payload = self._request_json(
+            system_prompt=CODE_SYSTEM_PROMPT,
+            prompt=user_prompt,
+            max_output_tokens=self.config.max_tokens,
+            temperature=0.2,
+        )
 
         raw_cells = payload.get("cells") or []
         cells: list[GeneratedCell] = []
@@ -619,25 +623,12 @@ class LLMService:
         )
 
     def _request_cell(self, user_prompt: str) -> GeneratedCell:
-        if self.config.provider == "openai":
-            response = self.client.responses.create(
-                model=self.config.model,
-                instructions=CELL_REPAIR_SYSTEM_PROMPT,
-                input=user_prompt,
-                max_output_tokens=self.config.max_tokens,
-                temperature=0.2,
-            )
-            payload = _extract_json(_extract_text_from_openai_response(response))
-        else:
-            response = self.client.messages.create(
-                model=self.config.model,
-                system=CELL_REPAIR_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_prompt}],
-                max_tokens=self.config.max_tokens,
-                temperature=0.2,
-            )
-            text = "".join(block.text for block in response.content if getattr(block, "type", "") == "text")
-            payload = _extract_json(text)
+        payload = self._request_json(
+            system_prompt=CELL_REPAIR_SYSTEM_PROMPT,
+            prompt=user_prompt,
+            max_output_tokens=self.config.max_tokens,
+            temperature=0.2,
+        )
 
         return GeneratedCell(
             name=str(payload.get("name", "repaired_cell")).strip() or "repaired_cell",

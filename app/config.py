@@ -51,16 +51,16 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
     data = _read_yaml(config_path)
 
     llm_data = data.get("llm", {})
-    openai_data = data.get("openai", {})
     server_data = data.get("server", {})
     autotask_data = data.get("autotask", {})
+    base_url = str(llm_data.get("base_url", "")).strip() or str(data.get("openai", {}).get("base_url", "")).strip() or None
 
     llm = LLMConfig(
         provider=str(llm_data.get("provider", "openai")).strip().lower(),
         model=str(llm_data.get("model", "gpt-4o")).strip(),
         api_key=str(os.getenv("LLM_API_KEY") or llm_data.get("api_key", "")).strip(),
         max_tokens=int(llm_data.get("max_tokens", 4096)),
-        base_url=str(openai_data.get("base_url", "")).strip() or None,
+        base_url=base_url,
     )
     server = ServerConfig(
         host=str(server_data.get("host", "0.0.0.0")).strip(),

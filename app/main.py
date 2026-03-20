@@ -253,6 +253,34 @@ def _result_issue(question: str, result: dict | None) -> str | None:
     return None
 
 
+async def _repair_current_program(
+    llm_service: LLMService,
+    question: str,
+    history: list[dict[str, str]],
+    program: GeneratedProgram,
+    issue_text: str,
+    repair_index: int | None,
+) -> GeneratedProgram:
+    repair_message = "\n".join(filter(None, [issue_text, _repair_hint(question, issue_text, program)]))
+    if repair_index is None:
+        return await asyncio.to_thread(
+            llm_service.repair_program,
+            question,
+            history,
+            program.python_code,
+            repair_message,
+        )
+
+    return await asyncio.to_thread(
+        llm_service.repair_program_cell,
+        question,
+        history,
+        program,
+        repair_index,
+        repair_message,
+    )
+
+
 async def _stream_sync_generator(generator_factory) -> AsyncIterator[str]:
     queue: asyncio.Queue[str | Exception | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
@@ -515,23 +543,9 @@ async def _chat_events(
 
             repair_index = _issue_cell_index(issue, current_program)
             yield {"type": "step", "step": "coding", "text": "The result looked incomplete. Repairing the most likely failing cell and trying again."}
-            if repair_index is None:
-                current_program = await asyncio.to_thread(
-                    llm_service.repair_program,
-                    question,
-                    history,
-                    current_program.python_code,
-                    "\n".join(filter(None, [issue, _repair_hint(question, issue, current_program)])),
-                )
-            else:
-                current_program = await asyncio.to_thread(
-                    llm_service.repair_program_cell,
-                    question,
-                    history,
-                    current_program,
-                    repair_index,
-                    "\n".join(filter(None, [issue, _repair_hint(question, issue, current_program)])),
-                )
+            current_program = await _repair_current_program(
+                llm_service, question, history, current_program, issue, repair_index
+            )
             async for event in _emit_program_cells(current_program, repair_index):
                 yield event
             yield {"type": "step", "step": "executing", "text": "Retrying the repaired Autotask query."}
@@ -550,23 +564,9 @@ async def _chat_events(
             if attempt == max_attempts:
                 raise
             yield {"type": "step", "step": "coding", "text": "The query failed. Repairing the failing cell and retrying."}
-            if repair_index is None:
-                current_program = await asyncio.to_thread(
-                    llm_service.repair_program,
-                    question,
-                    history,
-                    current_program.python_code,
-                    "\n".join(filter(None, [error_message, _repair_hint(question, error_message, current_program)])),
-                )
-            else:
-                current_program = await asyncio.to_thread(
-                    llm_service.repair_program_cell,
-                    question,
-                    history,
-                    current_program,
-                    repair_index,
-                    "\n".join(filter(None, [error_message, _repair_hint(question, error_message, current_program)])),
-                )
+            current_program = await _repair_current_program(
+                llm_service, question, history, current_program, error_message, repair_index
+            )
             async for event in _emit_program_cells(current_program, repair_index):
                 yield event
             yield {"type": "step", "step": "executing", "text": "Retrying after the repair."}
