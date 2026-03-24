@@ -73,6 +73,11 @@ Use the cached context manifest carefully:
 
 CODE_SYSTEM_PROMPT = """You generate Python programs for Autotask analytics using the atws library.
 
+This assistant is strictly read-only:
+- Never create, update, delete, or otherwise modify data in Autotask or any external system.
+- Only make read/query operations needed to answer the user's question.
+- If a user asks for a write action, do not perform it; instead return a final answer explaining that this assistant can only query data.
+
 Return strict JSON with these keys:
 - title: short title for the answer
 - reasoning_summary: array of 3-6 short strings
@@ -106,6 +111,8 @@ Hard rules for python_code:
 - Do not import anything.
 - `Counter` and `defaultdict` are already available; never write `import` or `from ... import ...`.
 - Use helpers["Query"] or Query for queries.
+- Never call any method or helper that could create, update, delete, save, submit, patch, or otherwise mutate records.
+- Never generate code that changes tickets, companies, contacts, time entries, or any other Autotask entity.
 - The final cell must return a JSON-serializable dict with keys: summary, columns, rows, notes.
 - Use at.query(query).fetch_all() or helpers["fetch_all"](at, query) to retrieve records.
 - Prefer datetime filters for "last week", "this month", and "last 30 days".
@@ -245,6 +252,11 @@ Checkpoint preview rules:
 
 
 CELL_REPAIR_SYSTEM_PROMPT = """You repair one notebook-like Python cell for an Autotask analytics workflow.
+
+This assistant is strictly read-only:
+- Never create, update, delete, or otherwise modify data in Autotask or any external system.
+- Repairs may only use read/query operations.
+- If the failing cell attempted a write action, replace it with read-only logic or a safe final response that explains the limitation.
 
 Return strict JSON with these keys:
 - name: short snake_case name
@@ -497,7 +509,8 @@ class LLMService:
             f"Question: {question}\n\n"
             f"Available cached context manifest from the previous turn:\n{cached_context_summary or 'None.'}\n\n"
             "Generate the JSON payload now. Return only JSON.\n"
-            "Be especially careful to minimize data fetched from Autotask when the question suggests large ticket volume."
+            "Be especially careful to minimize data fetched from Autotask when the question suggests large ticket volume.\n"
+            "Important: this assistant is read-only and may only make queries, never modifications."
         )
         return self._request_program(user_prompt)
 
@@ -539,6 +552,7 @@ class LLMService:
             "If numeric values may be Decimal-like, convert them to float or int before returning.\n\n"
             "Keep or improve efficiency. Avoid broadening the query into a larger ticket pull unless absolutely necessary.\n\n"
             "Do not use import statements. Counter and defaultdict are already available.\n\n"
+            "Important: this assistant is read-only and may only make queries, never modifications.\n\n"
             f"Previous python_code:\n{broken_code}\n\n"
             "Return only JSON."
         )
@@ -566,7 +580,8 @@ class LLMService:
             f"Current failing cell:\n{current_cell.python_code}\n\n"
             f"Later cells that should keep working after the fix:\n{self._cells_block(later_cells)}\n\n"
             "Repair only the failing cell. Return only JSON.\n"
-            "Keep or improve efficiency and avoid increasing the volume of fetched Autotask records."
+            "Keep or improve efficiency and avoid increasing the volume of fetched Autotask records.\n"
+            "Important: this assistant is read-only and may only make queries, never modifications."
         )
         repaired_cell = self._request_cell(user_prompt)
         repaired_cells = list(program.cells)
