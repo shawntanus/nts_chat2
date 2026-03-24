@@ -8,11 +8,11 @@
 - use `venv/bin/python` and `venv/bin/pip` for python
 
 ## Main Structure
-- `app/main.py`: FastAPI app, websocket flow, cached-context reuse, repair loop.
-- `app/llm.py`: prompts, reuse decisions, staged code generation, cell repair.
-- `app/executor.py`: sandboxed execution, result normalization, context previews.
-- `app/autotask.py`: `atws` helpers, label resolution, picklist helpers, bulk ID lookup helpers.
-- `static/index.html`: current frontend. It contains the active HTML, CSS, and JS.
+- `src/app/main.py`: FastAPI app, websocket flow, cached-context reuse, repair loop.
+- `src/app/llm.py`: prompts, reuse decisions, staged code generation, cell repair.
+- `src/app/executor.py`: sandboxed execution, result normalization, context previews.
+- `src/app/autotask.py`: `atws` helpers, label resolution, picklist helpers, bulk ID lookup helpers.
+- `src/static/index.html`: current frontend. It contains the active HTML, CSS, and JS.
 
 ## Autotask / atws Rules
 - Prefer fetching the smallest dataset possible.

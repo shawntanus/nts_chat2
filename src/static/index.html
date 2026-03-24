@@ -616,15 +616,28 @@ let codeBlocksByCell = new Map();
 let codeBlockHistoryByCell = new Map();
 let cellTimerTicker = null;
 let lastStructuredResult = null;
+let reconnectTimer = null;
+let pendingSendOnConnect = false;
 
 function connect() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws`);
 
-  ws.onopen = () => setStatus("Connected", true);
+  ws.onopen = () => {
+    setStatus("Connected", true);
+    if (pendingSendOnConnect && !busy) {
+      pendingSendOnConnect = false;
+      sendQuestion({ deferIfDisconnected: false });
+    }
+  };
   ws.onclose = () => {
     setStatus("Reconnecting...", false);
-    setTimeout(connect, 2000);
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connect();
+    }, 2000);
   };
   ws.onerror = () => setStatus("Error", false);
   ws.onmessage = (event) => handleMessage(JSON.parse(event.data));
@@ -1183,12 +1196,22 @@ function setBusy(value) {
   }
 }
 
-function sendQuestion() {
-  if (busy || !ws || ws.readyState !== WebSocket.OPEN) return;
+function sendQuestion(options = {}) {
+  const { deferIfDisconnected = true } = options;
+  if (busy) return;
   const input = document.getElementById("question-input");
   const question = input.value.trim();
   if (!question) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    if (deferIfDisconnected) {
+      pendingSendOnConnect = true;
+      setStatus("Connecting...", false);
+      connect();
+    }
+    return;
+  }
 
+  pendingSendOnConnect = false;
   input.value = "";
   input.style.height = "auto";
   setBusy(true);
@@ -1222,7 +1245,10 @@ function handleKey(event) {
 }
 
 function askSuggestion(el) {
-  document.getElementById("question-input").value = el.textContent;
+  const input = document.getElementById("question-input");
+  input.value = el.textContent.trim();
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, 120) + "px";
   sendQuestion();
 }
 
