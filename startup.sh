@@ -7,4 +7,4 @@ cd "$ROOT_DIR"
 
 VIRTUAL_ENV_PROMPT="nts_chat2" source "$ROOT_DIR/venv/bin/activate"
 
-exec python run.py
+exec "$ROOT_DIR/venv/bin/python" run.py "$@"

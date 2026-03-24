@@ -701,11 +701,40 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
-def run() -> None:
+def parse_bind_target(value: str) -> tuple[str, int]:
+    target = value.strip()
+    if not target:
+        raise ValueError("Bind target cannot be empty. Use HOST:PORT, for example 0.0.0.0:8000.")
+
+    host, sep, port_text = target.rpartition(":")
+    if not sep or not host or not port_text:
+        raise ValueError(f"Invalid bind target '{value}'. Use HOST:PORT, for example 0.0.0.0:8000.")
+
+    try:
+        port = int(port_text)
+    except ValueError as exc:
+        raise ValueError(f"Invalid port '{port_text}'. Port must be an integer.") from exc
+
+    if not 0 < port < 65536:
+        raise ValueError(f"Invalid port '{port}'. Port must be between 1 and 65535.")
+
+    normalized_host = host.strip()
+    if not normalized_host:
+        raise ValueError("Host cannot be empty.")
+
+    return normalized_host, port
+
+
+def run(host: str | None = None, port: int | None = None) -> None:
     import uvicorn
 
     config: AppConfig = load_config(PROJECT_ROOT / "config.yaml")
-    uvicorn.run("app.main:app", host=config.server.host, port=config.server.port, reload=False)
+    uvicorn.run(
+        "app.main:app",
+        host=host or config.server.host,
+        port=port or config.server.port,
+        reload=False,
+    )
 
 
 if __name__ == "__main__":

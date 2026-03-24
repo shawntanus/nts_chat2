@@ -14,4 +14,10 @@ Interactive web app that:
 ./venv/bin/python run.py
 ```
 
+Or specify the bind address explicitly:
+
+```bash
+./venv/bin/python run.py 0.0.0.0:8000
+```
+
 Then open `http://localhost:8000`.

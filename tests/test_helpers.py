@@ -1,6 +1,8 @@
 from app.executor import normalize_result_shape
 from app.llm import _extract_json
-from app.main import _extract_time_scope, _normalize_history, _time_scope_covered_by
+import pytest
+
+from app.main import _extract_time_scope, _normalize_history, _time_scope_covered_by, parse_bind_target
 
 
 def test_normalize_history_filters_blank_items():
@@ -45,3 +47,15 @@ def test_extract_json_reads_embedded_json_object():
     payload = _extract_json("Here is the result:\n{\"reuse_existing_result\": true, \"rationale\": \"cached\"}\n")
 
     assert payload == {"reuse_existing_result": True, "rationale": "cached"}
+
+
+def test_parse_bind_target_accepts_host_and_port():
+    assert parse_bind_target("0.0.0.0:8000") == ("0.0.0.0", 8000)
+
+
+def test_parse_bind_target_rejects_invalid_values():
+    with pytest.raises(ValueError):
+        parse_bind_target("8000")
+
+    with pytest.raises(ValueError):
+        parse_bind_target("0.0.0.0:notaport")
